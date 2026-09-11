@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""GUI Launcher."""
+"""CLI Launcher."""
 
-from folder_to_epub.ui.app import main
+from folder_to_epub.cli.main import main
 
 if __name__ == "__main__":
     main()
