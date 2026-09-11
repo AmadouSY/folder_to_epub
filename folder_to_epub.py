@@ -139,6 +139,16 @@ class ChapterData:
         self.pages: List[ImagePage] = []
 
 
+class BookData:
+    """Représente un livre complet regroupant ses chapitres, sa couverture et ses métadonnées."""
+    def __init__(self, title: str, folder_path: Path, chapters: List[ChapterData], cover_path: Optional[Path] = None):
+        self.title = title
+        self.folder_path = folder_path
+        self.chapters = chapters
+        self.cover_path = cover_path
+        self.total_images = sum(len(c.pages) for c in chapters)
+
+
 def is_hidden_or_system_file(path: Path) -> bool:
     """Vérifie si un fichier ou dossier est caché (ex: .DS_Store, Thumbs.db, .git)."""
     name = path.name
@@ -216,6 +226,66 @@ def find_root_cover(source_dir: Path) -> Optional[Path]:
     if candidates:
         return natsorted(candidates, key=lambda p: p.name)[0]
     return None
+
+
+def detect_books(source_dir: Path, force_batch: Optional[bool] = None) -> Tuple[bool, List[BookData]]:
+    """
+    Analyse un dossier pour déterminer s'il s'agit d'un livre unique ou d'une collection (multi-livres).
+    - Si force_batch est True : chaque sous-dossier valide est traité comme un livre indépendant.
+    - Si force_batch est False : le dossier entier est traité comme un livre unique.
+    - Si force_batch est None (auto) :
+        Recherche si les sous-dossiers contiennent eux-mêmes des sous-dossiers avec des images
+        (structure à 2 niveaux : Livre / Chapitre / images), ou si plusieurs sous-dossiers ont
+        chacun leur propre image de couverture. Si oui, active le mode batch.
+    Retourne (is_batch, liste_de_BookData).
+    """
+    if not source_dir.exists() or not source_dir.is_dir():
+        return False, []
+
+    children = [p for p in source_dir.iterdir() if not is_hidden_or_system_file(p)]
+    subdirs = natsorted([p for p in children if p.is_dir()], key=lambda p: p.name)
+    direct_images = [p for p in children if p.is_file() and p.suffix.lower() in SUPPORTED_EXTENSIONS]
+
+    is_batch = False
+    if force_batch is True:
+        is_batch = True
+    elif force_batch is False:
+        is_batch = False
+    else:
+        # Détection automatique
+        if subdirs and not direct_images:
+            has_nested_subdirs = False
+            covers_count = 0
+            for sd in subdirs:
+                sd_children = [p for p in sd.iterdir() if not is_hidden_or_system_file(p)]
+                if any(p.is_dir() for p in sd_children):
+                    has_nested_subdirs = True
+                if find_root_cover(sd):
+                    covers_count += 1
+            if has_nested_subdirs or covers_count >= 2:
+                is_batch = True
+
+    if is_batch and subdirs:
+        books: List[BookData] = []
+        for sd in subdirs:
+            try:
+                chaps = collect_chapters_and_images(sd)
+                if chaps and sum(len(c.pages) for c in chaps) > 0:
+                    cov = find_root_cover(sd)
+                    books.append(BookData(title=sd.name, folder_path=sd, chapters=chaps, cover_path=cov))
+            except Exception:
+                continue
+        if books:
+            return True, books
+
+    # Mode livre unique (mono ou multi-chapitres)
+    try:
+        chaps = collect_chapters_and_images(source_dir)
+        cov = find_root_cover(source_dir)
+        single = BookData(title=source_dir.name, folder_path=source_dir, chapters=chaps, cover_path=cov)
+        return False, [single] if (chaps and single.total_images > 0) else []
+    except Exception:
+        return False, []
 
 
 def create_epub(
@@ -375,6 +445,47 @@ def create_epub(
     return output_file
 
 
+def create_epub_batch(
+    books: List[BookData],
+    output_dir: Path,
+    author: str = "Inconnu",
+    language: str = "fr",
+    is_manga: bool = False,
+    is_rtl: bool = False,
+    progress_callback=None
+) -> List[Path]:
+    """
+    Génère un fichier EPUB pour chaque livre d'une collection en mode batch.
+    progress_callback(book_idx, total_books, book, current_page, total_pages_in_book)
+    """
+    output_dir.mkdir(parents=True, exist_ok=True)
+    generated_epubs: List[Path] = []
+    total_books = len(books)
+
+    for b_idx, book in enumerate(books, start=1):
+        out_epub = output_dir / f"{book.title}.epub"
+
+        def on_book_page_progress(curr, tot, chap_title):
+            if progress_callback:
+                progress_callback(b_idx, total_books, book, curr, tot)
+
+        create_epub(
+            chapters=book.chapters,
+            output_file=out_epub,
+            title=book.title,
+            author=author,
+            language=language,
+            custom_cover_path=book.cover_path,
+            source_dir=book.folder_path,
+            is_manga=is_manga,
+            is_rtl=is_rtl,
+            progress_callback=on_book_page_progress
+        )
+        generated_epubs.append(out_epub)
+
+    return generated_epubs
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Convertit un dossier d'images organisé en sous-dossiers de chapitres en un fichier EPUB.",
@@ -382,12 +493,14 @@ def main():
         epilog="""Exemples d'utilisation :
   python folder_to_epub.py ./mon_livre
   python folder_to_epub.py ./manga_folder -o ./manga.epub --title "One Piece Vol 1" --author "Oda" --manga --rtl
+  python folder_to_epub.py ./ma_collection --batch -o ./epubs_sortie/
 """
     )
     parser.add_argument("source_dir", nargs="?", type=Path, default=None, help="Chemin vers le dossier source contenant les sous-dossiers de chapitres et les images.")
     parser.add_argument("-g", "--gui", action="store_true", help="Lance l'interface graphique interactive (GUI).")
-    parser.add_argument("-o", "--output", type=Path, help="Chemin du fichier EPUB de sortie (par défaut : <nom_du_dossier>.epub).")
-    parser.add_argument("-t", "--title", type=str, help="Titre du livre numérique (par défaut : nom du dossier source).")
+    parser.add_argument("-b", "--batch", action="store_true", help="Active le mode multi-livres (génère un fichier EPUB pour chaque sous-dossier de livre).")
+    parser.add_argument("-o", "--output", type=Path, help="Chemin du fichier EPUB de sortie (ou dossier de sortie en mode batch).")
+    parser.add_argument("-t", "--title", type=str, help="Titre du livre numérique (ignoré en mode batch où les noms de sous-dossiers sont utilisés).")
     parser.add_argument("-a", "--author", type=str, default="Inconnu", help="Auteur du livre (par défaut : 'Inconnu').")
     parser.add_argument("-l", "--lang", type=str, default="fr", help="Code langue du livre (par défaut : 'fr').")
     parser.add_argument("-c", "--cover", type=Path, help="Chemin optionnel vers une image de couverture personnalisée.")
@@ -420,12 +533,88 @@ def main():
             print(msg, file=sys.stderr)
         sys.exit(1)
 
+    # 1. Analyse et détection : Mode Multi-Livres (Batch) ou Livre Unique
+    is_batch, detected_books = detect_books(source_path, force_batch=True if args.batch else None)
+
+    if is_batch and len(detected_books) > 1:
+        # MODE MULTI-LIVRES (BATCH)
+        out_dir = args.output.resolve() if args.output else source_path.parent / f"{source_path.name}_epubs"
+        if out_dir.suffix.lower() == ".epub":
+            out_dir = out_dir.parent
+
+        if console:
+            console.print(Panel.fit(
+                f"[bold cyan]Mode Traitement par Lot (Batch Multi-Livres)[/bold cyan]\n"
+                f"[yellow]Dossier Collection :[/yellow] {source_path}\n"
+                f"[yellow]Dossier de sortie  :[/yellow] {out_dir}\n"
+                f"[yellow]Livres détectés    :[/yellow] {len(detected_books)}\n"
+                f"[yellow]Mode Manga/BD      :[/yellow] {'Oui' if args.manga else 'Non'} | [yellow]Sens RTL :[/yellow] {'Oui' if args.rtl else 'Non'}",
+                title="Configuration Batch"
+            ))
+
+            table = Table(title="Livres à convertir")
+            table.add_column("N°", justify="right", style="cyan")
+            table.add_column("Titre du livre", style="magenta")
+            table.add_column("Chapitres", justify="right", style="blue")
+            table.add_column("Pages", justify="right", style="green")
+            table.add_column("Couverture", style="yellow")
+
+            for idx, b in enumerate(detected_books, start=1):
+                cov_str = b.cover_path.name if b.cover_path else "1ère page"
+                table.add_row(str(idx), b.title, str(len(b.chapters)), str(b.total_images), cov_str)
+            console.print(table)
+            console.print("")
+
+        if RICH_AVAILABLE and console:
+            with Progress(
+                SpinnerColumn(),
+                TextColumn("[progress.description]{task.description}"),
+                BarColumn(),
+                TaskProgressColumn(),
+                TimeRemainingColumn(),
+                console=console
+            ) as progress:
+                overall_task = progress.add_task("[bold cyan]Progression globale des livres...", total=len(detected_books))
+                current_book_task = progress.add_task("[bold magenta]Page en cours...", total=1)
+
+                def update_batch_progress(b_idx, total_b, book, curr_p, total_p):
+                    progress.update(overall_task, completed=b_idx - 1, description=f"[bold cyan]Livre {b_idx}/{total_b} : {book.title}")
+                    progress.update(current_book_task, total=total_p, completed=curr_p, description=f"[bold magenta]{book.title} (p. {curr_p}/{total_p})")
+
+                created_files = create_epub_batch(
+                    books=detected_books,
+                    output_dir=out_dir,
+                    author=args.author,
+                    language=args.lang,
+                    is_manga=args.manga,
+                    is_rtl=args.rtl,
+                    progress_callback=update_batch_progress
+                )
+                progress.update(overall_task, completed=len(detected_books))
+        else:
+            print(f"Génération de {len(detected_books)} livres EPUB...")
+            created_files = create_epub_batch(
+                books=detected_books,
+                output_dir=out_dir,
+                author=args.author,
+                language=args.lang,
+                is_manga=args.manga,
+                is_rtl=args.rtl
+            )
+
+        if console:
+            console.print(f"\n[bold green]Succès ! {len(created_files)} livres EPUB ont été générés dans :[/bold green]\n[cyan]{out_dir}[/cyan]")
+        else:
+            print(f"Succès ! {len(created_files)} fichiers EPUB créés dans : {out_dir}")
+        return
+
+    # MODE LIVRE UNIQUE
     book_title = args.title or source_path.name
     output_file = args.output or source_path.with_suffix('.epub')
 
     if console:
         console.print(Panel.fit(
-            f"[bold cyan]Générateur EPUB à partir de dossiers d'images[/bold cyan]\n"
+            f"[bold cyan]Générateur EPUB (Livre Unique)[/bold cyan]\n"
             f"[yellow]Source :[/yellow] {source_path}\n"
             f"[yellow]Sortie :[/yellow] {output_file}\n"
             f"[yellow]Titre :[/yellow] {book_title} | [yellow]Auteur :[/yellow] {args.author} | [yellow]Langue :[/yellow] {args.lang}\n"
@@ -433,16 +622,7 @@ def main():
             title="Configuration"
         ))
 
-    # 1. Collecte et analyse des dossiers et images
-    try:
-        chapters = collect_chapters_and_images(source_path)
-    except Exception as e:
-        if console:
-            console.print(f"[bold red]Erreur lors de la lecture des dossiers : {e}[/bold red]")
-        else:
-            print(f"Erreur lors de la lecture des dossiers : {e}", file=sys.stderr)
-        sys.exit(1)
-
+    chapters = collect_chapters_and_images(source_path)
     if not chapters:
         msg = "Erreur : Aucune image valide n'a été trouvée dans le dossier source ou ses sous-dossiers."
         if console:
@@ -476,7 +656,6 @@ def main():
             else:
                 print(f"ℹ Couverture racine détectée : {auto_cover.name}")
 
-    # 2. Génération de l'EPUB
     if RICH_AVAILABLE and console:
         with Progress(
             SpinnerColumn(),

@@ -5,6 +5,7 @@ Un outil Python complet (avec **Interface Graphique Moderne** et **Ligne de Comm
 ## 🚀 Fonctionnalités
 
 - 🖥️ **Interface Graphique Moderne (CustomTkinter)** : Fenêtre intuitive avec aperçu miniature de la couverture, sélection interactive, suivi de la progression et ouverture en 1 clic.
+- 📚 **Mode Multi-Livres (Batch)** : Détecte si un dossier contient plusieurs livres (ex: bibliothèque ou collection) et génère automatiquement un fichier EPUB distinct par livre avec ses propres chapitres et sa propre couverture.
 - 🗂️ **Organisation par chapitres** : Chaque sous-dossier correspond à une entrée dans la Table des Matières (TOC). Supporte aussi les dossiers plats d'images.
 - 🔢 **Tri naturel strict (`natsort`)** : Garantit que `2.jpg` apparaît avant `10.jpg`, et `Chapitre 2` avant `Chapitre 10`.
 - 🖼️ **Support multi-formats & Pillow** : `.jpg`, `.jpeg`, `.png`, `.webp`, `.gif`, `.bmp` (validation de l'intégrité et lecture des dimensions).
@@ -92,6 +93,13 @@ python folder_to_epub.py ./manga_folder -o ./one_piece_v01.epub --title "One Pie
 python folder_to_epub.py ./mon_livre -c ./custom_cover.jpg
 ```
 
+### 5. Traitement par lot de plusieurs livres (Batch)
+
+```bash
+python folder_to_epub.py ./ma_collection --batch -o ./epubs_sortie/
+```
+*Génère un fichier `.epub` pour chaque sous-dossier de livre dans le dossier de sortie.*
+
 ---
 
 ## ⚙️ Options de la ligne de commande
@@ -100,7 +108,8 @@ python folder_to_epub.py ./mon_livre -c ./custom_cover.jpg
 | :--- | :--- | :--- |
 | `source_dir` | *(Positionnel)* | Optionnel si `--gui` est utilisé. Dossier source contenant les images/chapitres. |
 | `--gui` | `-g` | Lance l'interface graphique interactive (GUI). |
-| `--output` | `-o` | Chemin du fichier EPUB généré (par défaut `<nom_du_dossier>.epub`). |
+| `--batch` | `-b` | Active le mode multi-livres par lot (génère un EPUB pour chaque sous-dossier). |
+| `--output` | `-o` | Chemin du fichier EPUB généré (ou dossier de sortie en mode batch). |
 | `--title` | `-t` | Titre du livre (par défaut le nom du dossier source). |
 | `--author` | `-a` | Nom de l'auteur (par défaut `Inconnu`). |
 | `--lang` | `-l` | Code langue ISO (par défaut `fr`). |
