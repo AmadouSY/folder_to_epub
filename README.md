@@ -2,6 +2,50 @@
 
 A comprehensive Python tool featuring both a **Modern Graphical User Interface (GUI)** and a **Command-Line Interface (CLI)** to convert an image folder tree into a clean, structured, and responsive EPUB file optimized for e-readers (Kindle, Kobo, Apple Books, Kobo Clara/Libra, reMarkable, etc.).
 
+---
+
+## 🏛️ Architecture & Clean Code Design
+
+The project is structured according to **Clean Architecture** and **SOLID** principles, ensuring separation of concerns, testability, and maintainability:
+
+```text
+folder_to_epub/
+├── core/                        # Domain Layer (Independent of UI/CLI)
+│   ├── constants.py             # Formats, responsive CSS, and application metadata
+│   ├── exceptions.py            # Domain-specific exceptions hierarchy
+│   └── models.py                # ImagePage, ChapterData, BookData, ConversionConfig
+│
+├── services/                    # Application / Use Cases Layer
+│   ├── scanner.py               # File scanning, natural sorting, and cover detection
+│   ├── builder.py               # Pure EPUB 3 document assembly & styling
+│   └── converter.py             # Single and multi-book batch orchestration
+│
+├── cli/                         # Presentation Layer: Command-Line Interface
+│   ├── parser.py                # Argument parsing and documentation
+│   ├── renderer.py              # Rich terminal panels, tables, and progress bars
+│   └── main.py                  # CLI command flow
+│
+├── ui/                          # Presentation Layer: Graphical User Interface
+│   ├── theme.py                 # Design tokens and color palette
+│   ├── worker.py                # Asynchronous worker thread manager
+│   ├── components/              # Modular UI widgets
+│   │   ├── sidebar.py           # Navigation sidebar and appearance switcher
+│   │   ├── hero_header.py       # Dynamic status hero header
+│   │   ├── action_banner.py     # Main CTA button and progress bar
+│   │   └── cards.py             # 6 modular dashboard cards
+│   ├── views/                   # Application screens
+│   │   ├── dashboard_view.py    # Main workspace
+│   │   ├── books_view.py        # Books & chapters explorer
+│   │   ├── logs_view.py         # Activity log console
+│   │   └── settings_view.py     # Information & preferences
+│   └── app.py                   # FolderToEpubApp window coordinator
+│
+├── folder_to_epub.py            # Backward-compatible CLI entry point & public facade
+└── gui.py                       # Backward-compatible GUI launcher facade
+```
+
+---
+
 ## 🚀 Features
 
 - 🖥️ **Modern Graphical User Interface (CustomTkinter)**: Intuitive window with live cover thumbnail preview, interactive folder selection, real-time progress bar, and 1-click open actions.
