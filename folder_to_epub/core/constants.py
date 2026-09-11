@@ -2,10 +2,13 @@
 
 APP_NAME = "folder_to_epub"
 APP_TITLE = "EPUB Forge"
-APP_VERSION = "2.1.0"
+APP_VERSION = "2.2.0"
 
 # Formats supported by the scanner
 SUPPORTED_EXTENSIONS = frozenset({'.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp'})
+
+# Archive formats supported for direct conversion
+SUPPORTED_ARCHIVE_EXTENSIONS = frozenset({'.cbz', '.zip'})
 
 # Responsive page styling for EPUB 3
 DEFAULT_CSS = """@page {

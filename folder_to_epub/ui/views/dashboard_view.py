@@ -47,6 +47,7 @@ class DashboardView(ctk.CTkScrollableFrame):
             self.cards_grid,
             path_var=app.source_path_var,
             on_browse=app.on_browse_source,
+            on_browse_archive=app.on_browse_archive,
             height=140
         )
         self.source_card.grid(row=0, column=0, padx=(0, 8), pady=(0, 16), sticky="nsew")

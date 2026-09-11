@@ -1,4 +1,4 @@
-"""Directory scanning and structure inspection service."""
+"""Directory and archive scanning service."""
 
 from pathlib import Path
 from typing import List, Optional, Tuple
@@ -7,6 +7,7 @@ from natsort import natsorted
 from folder_to_epub.core.constants import SUPPORTED_EXTENSIONS
 from folder_to_epub.core.exceptions import InvalidSourceError
 from folder_to_epub.core.models import Book, Chapter, ImagePage
+from folder_to_epub.services.archive import ArchiveService
 
 
 class ScannerService:
@@ -110,19 +111,62 @@ class ScannerService:
             return None
 
     @classmethod
-    def detect_books(cls, source_dir: Path, force_batch: Optional[bool] = None) -> Tuple[bool, List[Book]]:
+    def scan_archive(cls, archive_path: Path) -> Optional[Book]:
+        """Inspects an archive file (.cbz, .zip) and creates a Book model."""
+        archive_path = Path(archive_path)
+        if not ArchiveService.is_archive(archive_path):
+            return None
+
+        count, chapter_names = ArchiveService.inspect_archive(archive_path)
+        if count == 0:
+            return None
+
+        dummy_chapters = [Chapter(title=c) for c in chapter_names] if chapter_names else [Chapter(title=archive_path.stem)]
+        return Book(
+            title=archive_path.stem,
+            folder_path=archive_path.parent,
+            chapters=dummy_chapters,
+            archive_path=archive_path,
+            archive_page_count=count
+        )
+
+    @classmethod
+    def detect_books(cls, source_path: Path, force_batch: Optional[bool] = None) -> Tuple[bool, List[Book]]:
         """
-        Analyzes a directory to determine if it represents a single book or a batch collection.
-        Returns:
-            Tuple of (is_batch_mode: bool, list_of_Book).
+        Analyzes a path (folder or archive file) to detect single book vs batch collection.
+        Supports:
+        - Direct .cbz / .zip archive file -> Single book
+        - Folder containing multiple .cbz / .zip files -> Batch mode
+        - Folder containing chapter subdirectories -> Single book or Batch mode
         """
-        if not source_dir:
+        if not source_path:
             return False, []
-        source_dir = Path(source_dir)
-        if not source_dir.exists() or not source_dir.is_dir():
+        source_path = Path(source_path)
+        if not source_path.exists():
             return False, []
 
-        children = [p for p in source_dir.iterdir() if not cls.is_hidden_or_system_file(p)]
+        # 1. Single archive file directly passed
+        if ArchiveService.is_archive(source_path):
+            archive_book = cls.scan_archive(source_path)
+            return False, [archive_book] if archive_book else []
+
+        if not source_path.is_dir():
+            return False, []
+
+        children = [p for p in source_path.iterdir() if not cls.is_hidden_or_system_file(p)]
+        archive_children = natsorted([p for p in children if ArchiveService.is_archive(p)], key=lambda p: p.name)
+
+        # 2. Directory containing multiple .cbz / .zip archive files (Batch mode)
+        if archive_children:
+            books = []
+            for arc in archive_children:
+                b = cls.scan_archive(arc)
+                if b:
+                    books.append(b)
+            if books:
+                is_batch = len(books) > 1 if force_batch is None else force_batch
+                return is_batch, books
+
         subdirs = natsorted([p for p in children if p.is_dir()], key=lambda p: p.name)
         direct_images = [p for p in children if p.is_file() and p.suffix.lower() in SUPPORTED_EXTENSIONS]
 
@@ -132,7 +176,6 @@ class ScannerService:
         elif force_batch is False:
             is_batch = False
         else:
-            # Auto-detect batch mode if subdirectories have nested folders or their own covers
             if subdirs and not direct_images:
                 has_nested_subdirs = False
                 covers_count = 0
@@ -155,5 +198,5 @@ class ScannerService:
                 return True, books
 
         # Fallback to single book
-        single = cls.scan_book(source_dir)
+        single = cls.scan_book(source_path)
         return False, [single] if single else []

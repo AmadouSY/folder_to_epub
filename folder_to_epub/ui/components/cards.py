@@ -46,17 +46,30 @@ class BaseCard(ctk.CTkFrame):
 class SourceCard(BaseCard):
     """Card 1: Source folder picker & badges."""
 
-    def __init__(self, parent: ctk.CTkFrame, path_var: ctk.StringVar, on_browse: Callable[[], None], **kwargs):
-        super().__init__(parent, "📁 1. Source Folder", "Select image directory or book collection", **kwargs)
+    def __init__(self, parent: ctk.CTkFrame, path_var: ctk.StringVar, on_browse: Callable[[], None], on_browse_archive: Optional[Callable[[], None]] = None, **kwargs):
+        super().__init__(parent, "📁 1. Source (Folder / Archive)", "Select directory or .cbz / .zip file", **kwargs)
 
         row = ctk.CTkFrame(self.body, fg_color="transparent")
         row.pack(fill="x", pady=(4, 8))
 
-        self.entry = ctk.CTkEntry(row, textvariable=path_var, placeholder_text="Choose folder...", height=34)
-        self.entry.pack(side="left", fill="x", expand=True, padx=(0, 8))
+        self.entry = ctk.CTkEntry(row, textvariable=path_var, placeholder_text="Folder or archive (.cbz, .zip)...", height=34)
+        self.entry.pack(side="left", fill="x", expand=True, padx=(0, 6))
 
-        self.browse_btn = ctk.CTkButton(row, text="Browse...", width=85, height=34, command=on_browse)
-        self.browse_btn.pack(side="right")
+        self.browse_btn = ctk.CTkButton(row, text="Folder...", width=70, height=34, command=on_browse)
+        self.browse_btn.pack(side="left", padx=(0, 4))
+
+        if on_browse_archive:
+            self.archive_btn = ctk.CTkButton(
+                row,
+                text="Archive...",
+                width=75,
+                height=34,
+                fg_color="transparent",
+                border_width=1,
+                text_color=("gray20", "gray85"),
+                command=on_browse_archive
+            )
+            self.archive_btn.pack(side="right")
 
         self.stats_label = ctk.CTkLabel(
             self.body,

@@ -1,10 +1,11 @@
-"""Main CLI command implementation."""
+"""Main CLI command implementation supporting folders and archives."""
 
 import sys
 from pathlib import Path
 from folder_to_epub.cli.parser import build_arg_parser
 from folder_to_epub.cli.renderer import CliRenderer, RICH_AVAILABLE
 from folder_to_epub.core.models import Book, ConversionConfig, ProgressEvent
+from folder_to_epub.services.archive import ArchiveService
 from folder_to_epub.services.scanner import ScannerService
 from folder_to_epub.services.converter import ConversionService
 
@@ -24,7 +25,6 @@ def main() -> None:
     parser = build_arg_parser()
     args = parser.parse_args()
 
-    # GUI requested or no directory provided
     if args.gui or args.source_dir is None:
         try:
             from folder_to_epub.ui.app import main as launch_gui
@@ -39,18 +39,17 @@ def main() -> None:
     renderer = CliRenderer()
     source_path = args.source_dir.resolve()
 
-    if not source_path.exists() or not source_path.is_dir():
-        renderer.print_error(f"Source folder '{source_path}' does not exist or is not a directory.")
+    if not source_path.exists() or (not source_path.is_dir() and not ArchiveService.is_archive(source_path)):
+        renderer.print_error(f"Source '{source_path}' does not exist or is not a valid directory or archive (.cbz, .zip).")
         sys.exit(1)
 
-    # 1. Inspect source directory for Batch Multi-Books vs Single Book
     is_batch, detected_books = ScannerService.detect_books(
         source_path,
         force_batch=True if args.batch else None
     )
 
     base_config = ConversionConfig(
-        title=args.title or source_path.name,
+        title=args.title or (source_path.stem if ArchiveService.is_archive(source_path) else source_path.name),
         author=args.author,
         language=args.lang,
         custom_cover_path=args.cover,
@@ -122,8 +121,8 @@ def main() -> None:
         renderer.render_success(f"Success! {len(created)} EPUB books generated in:", out_dir)
         return
 
-    # SINGLE BOOK CONVERSION
-    book_title = args.title or source_path.name
+    # SINGLE BOOK CONVERSION (Folder or Single Archive)
+    book_title = args.title or (source_path.stem if ArchiveService.is_archive(source_path) else source_path.name)
     output_file = args.output or source_path.with_suffix('.epub')
 
     renderer.render_single_header(
@@ -136,29 +135,34 @@ def main() -> None:
         is_rtl=args.rtl
     )
 
-    chapters = ScannerService.scan_chapters(source_path)
-    if not chapters:
-        renderer.print_error("No valid images found in the source directory.")
-        sys.exit(1)
+    if detected_books and detected_books[0].is_archive:
+        single_book = detected_books[0]
+        total_images = single_book.total_images
+    else:
+        chapters = ScannerService.scan_chapters(source_path)
+        if not chapters:
+            renderer.print_error("No valid images found in the source directory.")
+            sys.exit(1)
 
-    cover = args.cover or ScannerService.find_cover(source_path)
-    if cover:
-        renderer.print_info(f"Cover detected: {cover.name}")
+        cover = args.cover or ScannerService.find_cover(source_path)
+        if cover:
+            renderer.print_info(f"Cover detected: {cover.name}")
 
-    single_book = Book(
-        title=book_title,
-        folder_path=source_path,
-        chapters=chapters,
-        cover_path=cover
-    )
+        single_book = Book(
+            title=book_title,
+            folder_path=source_path,
+            chapters=chapters,
+            cover_path=cover
+        )
+        total_images = single_book.total_images
+        renderer.render_chapters_table(single_book.chapters)
 
-    renderer.render_chapters_table(single_book.chapters)
     single_config = ConversionConfig(
         title=book_title,
         author=args.author,
         language=args.lang,
         output_path=output_file,
-        custom_cover_path=cover,
+        custom_cover_path=args.cover or single_book.cover_path,
         source_dir=source_path,
         is_manga=args.manga,
         is_rtl=args.rtl
@@ -173,7 +177,7 @@ def main() -> None:
             TimeRemainingColumn(),
             console=renderer.console
         ) as progress:
-            task = progress.add_task("[bold cyan]Generating EPUB...", total=single_book.total_images)
+            task = progress.add_task("[bold cyan]Generating EPUB...", total=total_images)
 
             def update_single(event: ProgressEvent):
                 progress.update(
@@ -188,7 +192,7 @@ def main() -> None:
                 progress_callback=update_single
             )
     else:
-        print(f"Generating EPUB for {single_book.total_images} pages...")
+        print(f"Generating EPUB for {total_images} pages...")
         final_epub = ConversionService.convert_book(
             book=single_book,
             config=single_config

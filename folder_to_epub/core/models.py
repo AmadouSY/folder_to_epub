@@ -76,6 +76,12 @@ class Book:
     folder_path: Path
     chapters: List[Chapter] = field(default_factory=list)
     cover_path: Optional[Path] = None
+    archive_path: Optional[Path] = None
+    archive_page_count: int = 0
+
+    @property
+    def is_archive(self) -> bool:
+        return self.archive_path is not None
 
     @property
     def chapter_count(self) -> int:
@@ -83,7 +89,9 @@ class Book:
 
     @property
     def total_images(self) -> int:
-        return sum(c.page_count for c in self.chapters)
+        if self.chapters and any(c.page_count > 0 for c in self.chapters):
+            return sum(c.page_count for c in self.chapters)
+        return self.archive_page_count
 
 
 @dataclass

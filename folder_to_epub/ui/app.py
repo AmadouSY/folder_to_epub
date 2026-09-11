@@ -11,6 +11,7 @@ from PIL import Image
 
 from folder_to_epub.core.constants import APP_TITLE, AVAILABLE_LANGUAGES
 from folder_to_epub.core.models import Book, Chapter, ConversionConfig, ProgressEvent
+from folder_to_epub.services.archive import ArchiveService
 from folder_to_epub.services.scanner import ScannerService
 from folder_to_epub.services.converter import ConversionService
 from folder_to_epub.ui.theme import THEME_COLORS
@@ -128,12 +129,25 @@ class FolderToEpubApp(ctk.CTk):
         self.source_path_var.set(str(self.source_dir))
         self.analyze_source_directory()
 
+    def on_browse_archive(self) -> None:
+        """Invoked when user clicks Archive button to select a .cbz or .zip directly."""
+        filename = filedialog.askopenfilename(
+            title="Select Comic or Manga Archive",
+            filetypes=[("Comic / Zip Archives", "*.cbz;*.zip"), ("All Files", "*.*")]
+        )
+        if not filename:
+            return
+
+        self.source_dir = Path(filename)
+        self.source_path_var.set(str(self.source_dir))
+        self.analyze_source_directory()
+
     def analyze_source_directory(self) -> None:
-        """Inspects directory for batch books or single book structure."""
+        """Inspects directory or archive for batch books or single book structure."""
         if not self.source_dir or not self.source_dir.exists():
             return
 
-        self.log(f"Analyzing source directory: {self.source_dir}")
+        self.log(f"Analyzing source: {self.source_dir}")
 
         is_batch, detected_books = ScannerService.detect_books(
             self.source_dir,
@@ -159,14 +173,48 @@ class FolderToEpubApp(ctk.CTk):
                 text=f"{len(self.books)} books (Batch mode) • {self.total_images_count} total pages"
             )
 
-            out_dir = self.source_dir.parent / f"{self.source_dir.name}_epubs"
+            out_dir = self.source_dir.parent / f"{self.source_dir.stem if ArchiveService.is_archive(self.source_dir) else self.source_dir.name}_epubs"
             self.output_file = out_dir
             self.output_path_var.set(str(out_dir))
 
-            first_cov = self.books[0].cover_path if self.books else None
-            self.auto_root_cover = first_cov
-            self._update_cover_preview(first_cov, is_auto=True)
+            # Cover preview from first book
+            if self.books and self.books[0].is_archive and self.books[0].archive_path:
+                cover_data = ArchiveService.get_cover_bytes(self.books[0].archive_path)
+                self._update_cover_preview(None, is_auto=True, archive_cover=cover_data)
+            else:
+                first_cov = self.books[0].cover_path if self.books else None
+                self.auto_root_cover = first_cov
+                self._update_cover_preview(first_cov, is_auto=True)
             self.log(f"Batch collection detected: {len(self.books)} books.")
+
+        elif detected_books and detected_books[0].is_archive:
+            # Single archive book
+            single_book = detected_books[0]
+            self.books = [single_book]
+            self.chapters = single_book.chapters
+            self.total_images_count = single_book.total_images
+
+            self.dashboard_view.hero.update_state(
+                "shield",
+                "Archive Ready to Convert",
+                f"Loaded archive '{single_book.title}' ({self.total_images_count} estimated pages)."
+            )
+            self.dashboard_view.action_banner.set_status(f"Archive book ready ({self.source_dir.suffix.upper()})")
+            self.dashboard_view.action_banner.set_button_state(True, "🚀 Convert to EPUB")
+            self.dashboard_view.source_card.stats_label.configure(
+                text=f"Archive: {self.source_dir.name} • {self.total_images_count} pages"
+            )
+
+            if not self.title_var.get():
+                self.title_var.set(single_book.title)
+
+            out_epub = self.source_dir.with_suffix('.epub')
+            self.output_file = out_epub
+            self.output_path_var.set(str(out_epub))
+
+            cover_data = ArchiveService.get_cover_bytes(self.source_dir)
+            self._update_cover_preview(self.custom_cover_file, is_auto=True, archive_cover=cover_data)
+            self.log(f"Loaded archive book: {single_book.title} ({self.total_images_count} pages).")
 
         else:
             self.books = []
@@ -245,8 +293,29 @@ class FolderToEpubApp(ctk.CTk):
         self._update_cover_preview(cover_to_show, is_auto=True)
         self.log("Cover reset to automatic detection.")
 
-    def _update_cover_preview(self, image_path: Optional[Path], is_auto: bool = True) -> None:
+    def _update_cover_preview(
+        self,
+        image_path: Optional[Path] = None,
+        is_auto: bool = True,
+        archive_cover: Optional[tuple] = None
+    ) -> None:
+        import io
         card = self.dashboard_view.cover_card
+
+        # Check in-memory archive cover bytes
+        if archive_cover and not image_path:
+            try:
+                filename, data = archive_cover
+                with Image.open(io.BytesIO(data)) as img:
+                    img_copy = img.copy()
+                    img_copy.thumbnail((80, 110))
+                    self.cover_thumbnail_image = ctk.CTkImage(light_image=img_copy, dark_image=img_copy, size=img_copy.size)
+                    card.thumb_label.configure(text="", image=self.cover_thumbnail_image)
+                card.status_label.configure(text=f"Archive: {filename}")
+                return
+            except Exception as e:
+                self.log(f"Archive cover error: {e}")
+
         if not image_path or not image_path.exists():
             card.thumb_label.configure(text="No\nCover", image=None)
             card.status_label.configure(text="No cover detected")
@@ -310,7 +379,7 @@ class FolderToEpubApp(ctk.CTk):
         if self.is_converting:
             return
         if not self.source_dir or not self.source_dir.exists():
-            messagebox.showwarning("Warning", "Select a valid source directory first.")
+            messagebox.showwarning("Warning", "Select a valid source directory or archive first.")
             return
 
         self.is_converting = True
@@ -327,7 +396,7 @@ class FolderToEpubApp(ctk.CTk):
             lang_code = selected_lang_str.split()[0] if selected_lang_str else "en"
 
             base_config = ConversionConfig(
-                title=self.title_var.get() or self.source_dir.name,
+                title=self.title_var.get() or (self.source_dir.stem if ArchiveService.is_archive(self.source_dir) else self.source_dir.name),
                 author=self.author_var.get() or "Unknown",
                 language=lang_code,
                 is_manga=self.manga_mode_var.get(),
@@ -335,7 +404,7 @@ class FolderToEpubApp(ctk.CTk):
             )
 
             if self.is_batch_mode:
-                out_dir = Path(self.output_path_var.get()) if self.output_path_var.get() else self.source_dir.parent / f"{self.source_dir.name}_epubs"
+                out_dir = Path(self.output_path_var.get()) if self.output_path_var.get() else self.source_dir.parent / f"{self.source_dir.stem if ArchiveService.is_archive(self.source_dir) else self.source_dir.name}_epubs"
 
                 def on_batch_progress(ev: ProgressEvent):
                     ratio = (ev.current_book_index - 1) / ev.total_books + (ev.current_step / max(ev.total_steps, 1)) / ev.total_books
@@ -356,12 +425,15 @@ class FolderToEpubApp(ctk.CTk):
                 base_config.custom_cover_path = self.custom_cover_file or self.auto_root_cover
                 base_config.source_dir = self.source_dir
 
-                single_book = Book(
-                    title=self.title_var.get() or self.source_dir.name,
-                    folder_path=self.source_dir,
-                    chapters=self.chapters,
-                    cover_path=self.custom_cover_file or self.auto_root_cover
-                )
+                if self.books and self.books[0].is_archive:
+                    single_book = self.books[0]
+                else:
+                    single_book = Book(
+                        title=self.title_var.get() or self.source_dir.name,
+                        folder_path=self.source_dir,
+                        chapters=self.chapters,
+                        cover_path=self.custom_cover_file or self.auto_root_cover
+                    )
 
                 def on_single_progress(ev: ProgressEvent):
                     ratio = ev.current_step / max(ev.total_steps, 1)
