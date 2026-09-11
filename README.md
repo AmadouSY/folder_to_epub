@@ -1,20 +1,20 @@
 # Folder to EPUB Converter (CLI & GUI)
 
-Un outil Python complet (avec **Interface Graphique Moderne** et **Ligne de Commande CLI**) permettant de convertir une arborescence de dossiers d'images en un fichier EPUB propre, structuré et responsive, optimisé pour liseuses (Kindle, Kobo, Apple Books, Kobo Clara/Libra, etc.).
+A comprehensive Python tool featuring both a **Modern Graphical User Interface (GUI)** and a **Command-Line Interface (CLI)** to convert an image folder tree into a clean, structured, and responsive EPUB file optimized for e-readers (Kindle, Kobo, Apple Books, Kobo Clara/Libra, reMarkable, etc.).
 
-## 🚀 Fonctionnalités
+## 🚀 Features
 
-- 🖥️ **Interface Graphique Moderne (CustomTkinter)** : Fenêtre intuitive avec aperçu miniature de la couverture, sélection interactive, suivi de la progression et ouverture en 1 clic.
-- 📚 **Mode Multi-Livres (Batch)** : Détecte si un dossier contient plusieurs livres (ex: bibliothèque ou collection) et génère automatiquement un fichier EPUB distinct par livre avec ses propres chapitres et sa propre couverture.
-- 🗂️ **Organisation par chapitres** : Chaque sous-dossier correspond à une entrée dans la Table des Matières (TOC). Supporte aussi les dossiers plats d'images.
-- 🔢 **Tri naturel strict (`natsort`)** : Garantit que `2.jpg` apparaît avant `10.jpg`, et `Chapitre 2` avant `Chapitre 10`.
-- 🖼️ **Support multi-formats & Pillow** : `.jpg`, `.jpeg`, `.png`, `.webp`, `.gif`, `.bmp` (validation de l'intégrité et lecture des dimensions).
-- 🏷️ **Détection intelligente de la couverture** : Recherche automatique à la racine d'une image contenant `cover` ou `couverture` (ex: `cover.jpg`, `00_cover.png`) si aucune n'est spécifiée, avec repli sur la 1ère image du 1er chapitre.
-- 📱 **CSS responsive & minimal** : Empêche le décalage, le rognage ou le débordement des images.
-- 🎨 **Mode Manga / Fixed-Layout (`--manga`, `--rtl`)** : Ajoute les métadonnées `pre-paginated`, `page-progression-direction="rtl"`, `zero-margin` pour une lecture optimale de droite à gauche.
-- 🛡️ **Filtres de sécurité** : Ignore automatiquement les fichiers système et cachés (`.DS_Store`, `Thumbs.db`, `desktop.ini`, etc.).
-- 📊 **Interface CLI avec Rich** : Barre de progression animée, tableaux récapitulatifs et logs détaillés.
-- 🧵 **Multi-threading non-bloquant** : L'interface graphique reste toujours fluide lors des conversions volumineuses.
+- 🖥️ **Modern Graphical User Interface (CustomTkinter)**: Intuitive window with live cover thumbnail preview, interactive folder selection, real-time progress bar, and 1-click open actions.
+- 📚 **Multi-Book Batch Mode**: Automatically detects when a folder contains multiple books (e.g., an entire manga or comic collection) and converts each into its own EPUB file with independent chapters and covers.
+- 🗂️ **Chapter Organization**: Each subfolder maps to an entry in the Table of Contents (TOC). Also handles flat folders of images directly.
+- 🔢 **Strict Natural Sorting (`natsort`)**: Ensures that `2.jpg` precedes `10.jpg`, and `Chapter 2` precedes `Chapter 10`.
+- 🖼️ **Multi-Format Image Support & Pillow Validation**: `.jpg`, `.jpeg`, `.png`, `.webp`, `.gif`, `.bmp` (validates image integrity and extracts dimensions).
+- 🏷️ **Smart Cover Auto-Detection**: Searches for an image file in the root folder containing `cover` (e.g., `cover.jpg`, `00_cover.png`) when none is specified, falling back gracefully to the first page of the first chapter.
+- 📱 **Responsive & Minimal CSS**: Prevents image shifts, clipping, and overflow across e-reader screens.
+- 🎨 **Manga / Fixed-Layout Mode (`--manga`, `--rtl`)**: Configures EPUB 3 metadata with `pre-paginated`, `page-progression-direction="rtl"`, and `zero-margin` for ideal right-to-left reading.
+- 🛡️ **Safety Filters**: Automatically filters out OS hidden/system artifacts (`.DS_Store`, `Thumbs.db`, `desktop.ini`, etc.).
+- 📊 **Rich CLI**: Progress animations, summary tables, and verbose logging.
+- 🧵 **Non-Blocking Multi-Threading**: GUI remains responsive throughout large conversions.
 
 ---
 
@@ -26,94 +26,109 @@ pip install -r requirements.txt
 
 ---
 
-## 🖥️ Utilisation de l'Interface Graphique (GUI)
+## 🖥️ Graphical User Interface (GUI) Usage
 
-Pour lancer l'interface graphique :
+Launch the GUI using:
 
 ```bash
 python gui.py
 ```
-*ou directement :*
+*or via the CLI flag:*
 ```bash
 python folder_to_epub.py --gui
 ```
-*(ou simplement en double-cliquant sur `gui.py` sous Windows)*
+*(or simply by double-clicking `gui.py` on Windows)*
 
-**Points forts du GUI :**
-- 📁 Sélection de dossier avec détection automatique de la structure (mono ou multi-chapitres) et nombre de pages.
-- 🖼️ Prévisualisation miniature en direct de la couverture détectée ou personnalisée.
-- ⚡ Pré-remplissage automatique du titre et du nom de fichier de sortie.
-- ⚙️ Switches pour le mode Manga / Fixed-Layout et lecture RTL (Droite à gauche).
-- 📈 Barre de progression en temps réel avec console de logs intégrée.
-- 📂 Boutons directs à la fin pour ouvrir l'EPUB ou son dossier dans l'Explorateur Windows.
+**GUI Highlights:**
+- 📁 Folder selection with automatic structure inspection (single book vs. batch collection, chapters count, and total pages).
+- 🖼️ Live cover thumbnail preview of automatically detected or manually chosen covers.
+- ⚡ Smart pre-filling for book title and output file name.
+- ⚙️ Toggle switches for Manga / Fixed-Layout and Right-to-Left (RTL) reading direction.
+- 📈 Real-time progress bar with an embedded activity log panel.
+- 📂 Direct completion buttons to open the generated EPUB or reveal it in File Explorer.
 
 ---
 
-## 📂 Structure attendue en entrée
+## 📂 Expected Input Directory Structure
 
+### Single Book (Multi-Chapter):
 ```text
-mon_livre/
-├── Chapitre 01/
+my_book/
+├── cover.jpg          <-- (Optional: auto-detected as cover)
+├── Chapter 01/
 │   ├── 01.jpg
 │   ├── 02.jpg
 │   └── 10.jpg
-└── Chapitre 02/
+└── Chapter 02/
     ├── 01.jpg
     └── 02.jpg
 ```
 
-*Note : Le script prend également en compte les dossiers simples (plat) contenant directement des images.*
+### Multi-Book Collection (Batch Mode):
+```text
+my_collection/
+├── One Piece Vol 01/
+│   ├── cover.jpg
+│   ├── Chapter 01/
+│   └── Chapter 02/
+└── Naruto Vol 01/
+    ├── 00_cover.png
+    ├── page_01.jpg
+    └── page_02.jpg
+```
+
+*Note: Flat single-folder books containing images directly are also fully supported.*
 
 ---
 
-## 💻 Commandes d'exécution
+## 💻 CLI Commands & Examples
 
-### 1. Utilisation de base
-
-```bash
-python folder_to_epub.py ./mon_livre
-```
-*Génère `mon_livre.epub` dans le dossier courant.*
-
-### 2. Spécifier le nom de sortie et les métadonnées
+### 1. Basic Conversion
 
 ```bash
-python folder_to_epub.py ./mon_livre -o ./mon_roman_graphique.epub --title "Mon Roman Graphique" --author "Jean Dupont" --lang fr
+python folder_to_epub.py ./my_book
+```
+*Generates `my_book.epub` in the current working directory.*
+
+### 2. Custom Output Path and Metadata
+
+```bash
+python folder_to_epub.py ./my_book -o ./my_graphic_novel.epub --title "My Graphic Novel" --author "John Doe" --lang en
 ```
 
-### 3. Mode Manga / BD (Fixed-Layout & Lecture de Droite à Gauche)
+### 3. Manga / Comic Mode (Fixed-Layout & Right-to-Left)
 
 ```bash
 python folder_to_epub.py ./manga_folder -o ./one_piece_v01.epub --title "One Piece Vol. 1" --author "Eiichiro Oda" --manga --rtl
 ```
 
-### 4. Spécifier une image de couverture personnalisée
+### 4. Custom Cover Image
 
 ```bash
-python folder_to_epub.py ./mon_livre -c ./custom_cover.jpg
+python folder_to_epub.py ./my_book -c ./custom_cover.jpg
 ```
 
-### 5. Traitement par lot de plusieurs livres (Batch)
+### 5. Multi-Book Batch Processing
 
 ```bash
-python folder_to_epub.py ./ma_collection --batch -o ./epubs_sortie/
+python folder_to_epub.py ./my_collection --batch -o ./output_epubs/
 ```
-*Génère un fichier `.epub` pour chaque sous-dossier de livre dans le dossier de sortie.*
+*Creates an `.epub` file for every book subfolder inside the output directory.*
 
 ---
 
-## ⚙️ Options de la ligne de commande
+## ⚙️ Command-Line Arguments
 
-| Option | Raccourci | Description |
+| Option | Shorthand | Description |
 | :--- | :--- | :--- |
-| `source_dir` | *(Positionnel)* | Optionnel si `--gui` est utilisé. Dossier source contenant les images/chapitres. |
-| `--gui` | `-g` | Lance l'interface graphique interactive (GUI). |
-| `--batch` | `-b` | Active le mode multi-livres par lot (génère un EPUB pour chaque sous-dossier). |
-| `--output` | `-o` | Chemin du fichier EPUB généré (ou dossier de sortie en mode batch). |
-| `--title` | `-t` | Titre du livre (par défaut le nom du dossier source). |
-| `--author` | `-a` | Nom de l'auteur (par défaut `Inconnu`). |
-| `--lang` | `-l` | Code langue ISO (par défaut `fr`). |
-| `--cover` | `-c` | Image de couverture spécifique. Par défaut : recherche une image à la racine contenant `cover` ou `couverture`, sinon prend la 1ère image du 1er chapitre. |
-| `--manga` | | Active le Fixed-Layout EPUB 3 (`pre-paginated`) pour Mangas & BD. |
-| `--rtl` | | Sens de lecture de droite à gauche (*Right-To-Left*). |
-| `--verbose` | `-v` | Affiche plus de détails durant le traitement. |
+| `source_dir` | *(Positional)* | Optional if `--gui` is used. Source directory containing images/chapters. |
+| `--gui` | `-g` | Launch the interactive Graphical User Interface (GUI). |
+| `--batch` | `-b` | Enable multi-book batch mode (generates one EPUB per subfolder). |
+| `--output` | `-o` | Output EPUB filepath (or output directory in batch mode). |
+| `--title` | `-t` | Book title (defaults to source directory name). |
+| `--author` | `-a` | Author name (defaults to `Unknown`). |
+| `--lang` | `-l` | ISO language code (defaults to `en`). |
+| `--cover` | `-c` | Custom cover image file. Defaults to root image containing `cover`, otherwise first page. |
+| `--manga` | | Enable EPUB 3 Fixed-Layout (`pre-paginated`) for comics & manga. |
+| `--rtl` | | Set reading direction to Right-To-Left (RTL). |
+| `--verbose` | `-v` | Display detailed processing output. |
