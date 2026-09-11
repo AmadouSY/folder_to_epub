@@ -27,6 +27,7 @@ except ImportError:
 from folder_to_epub import (
     collect_chapters_and_images,
     create_epub,
+    find_root_cover,
     ChapterData,
     SUPPORTED_EXTENSIONS
 )
@@ -49,6 +50,7 @@ class FolderToEpubApp(ctk.CTk):
         self.source_dir: Optional[Path] = None
         self.output_file: Optional[Path] = None
         self.custom_cover_file: Optional[Path] = None
+        self.auto_root_cover: Optional[Path] = None
         self.chapters: List[ChapterData] = []
         self.total_images_count: int = 0
         self.is_converting: bool = False
@@ -422,12 +424,23 @@ class FolderToEpubApp(ctk.CTk):
                 sample_chaps += f" et {len(self.chapters) - 3} autres..."
             details.append(f"Aperçu : {sample_chaps}")
 
+            # Détection d'une couverture racine contenant 'cover'
+            self.auto_root_cover = find_root_cover(self.source_dir)
+            if self.auto_root_cover:
+                details.append(f"✔ Couverture racine trouvée : {self.auto_root_cover.name}")
+                self._log(f"Couverture détectée à la racine : {self.auto_root_cover.name}")
+
             self.scan_details_label.configure(text="\n".join(details))
             self._log(f"Scan terminé : {len(self.chapters)} chapitres, {self.total_images_count} images.")
 
             # Mise à jour de la miniature
-            cover_img_path = self.chapters[0].pages[0].file_path if self.chapters[0].pages else None
-            self._update_cover_thumbnail(cover_img_path)
+            if self.custom_cover_file and self.custom_cover_file.exists():
+                self._update_cover_thumbnail(self.custom_cover_file)
+            elif self.auto_root_cover:
+                self._update_cover_thumbnail(self.auto_root_cover)
+            else:
+                cover_img_path = self.chapters[0].pages[0].file_path if self.chapters[0].pages else None
+                self._update_cover_thumbnail(cover_img_path)
 
         except Exception as e:
             self.scan_details_label.configure(text=f"Erreur d'analyse : {str(e)}")
@@ -471,7 +484,9 @@ class FolderToEpubApp(ctk.CTk):
         """Supprime la couverture personnalisée sélectionnée."""
         self.custom_cover_file = None
         self.cover_path_var.set("")
-        if self.chapters and self.chapters[0].pages:
+        if self.auto_root_cover and self.auto_root_cover.exists():
+            self._update_cover_thumbnail(self.auto_root_cover)
+        elif self.chapters and self.chapters[0].pages:
             self._update_cover_thumbnail(self.chapters[0].pages[0].file_path)
         else:
             self._update_cover_thumbnail(None)
@@ -528,7 +543,7 @@ class FolderToEpubApp(ctk.CTk):
         lang = self.lang_var.get().strip() or "fr"
         is_manga = self.manga_mode_var.get()
         is_rtl = self.rtl_mode_var.get()
-        custom_cover = self.custom_cover_file if (self.custom_cover_file and self.custom_cover_file.exists()) else None
+        cover_to_use = self.custom_cover_file if (self.custom_cover_file and self.custom_cover_file.exists()) else self.auto_root_cover
 
         # 2. Préparation de l'UI
         self.is_converting = True
@@ -542,17 +557,19 @@ class FolderToEpubApp(ctk.CTk):
         self._log("\n" + "=" * 50)
         self._log(f"Début de la conversion : '{title}'")
         self._log(f"Destination : {self.output_file}")
+        if cover_to_use:
+            self._log(f"Couverture : {cover_to_use.name}")
         self._log(f"Options : Manga={is_manga}, RTL={is_rtl}, Langue={lang}")
 
         # 3. Lancement dans un thread d'arrière-plan
         thread = threading.Thread(
             target=self._worker_conversion,
-            args=(self.chapters, self.output_file, title, author, lang, custom_cover, is_manga, is_rtl),
+            args=(self.chapters, self.output_file, title, author, lang, cover_to_use, self.source_dir, is_manga, is_rtl),
             daemon=True
         )
         thread.start()
 
-    def _worker_conversion(self, chapters, output_file, title, author, lang, custom_cover, is_manga, is_rtl):
+    def _worker_conversion(self, chapters, output_file, title, author, lang, custom_cover, source_dir, is_manga, is_rtl):
         """Exécute la création de l'EPUB en arrière-plan."""
         def on_progress(current: int, total: int, chapter_title: str):
             ratio = current / total if total > 0 else 0.0
@@ -567,6 +584,7 @@ class FolderToEpubApp(ctk.CTk):
                 author=author,
                 language=lang,
                 custom_cover_path=custom_cover,
+                source_dir=source_dir,
                 is_manga=is_manga,
                 is_rtl=is_rtl,
                 progress_callback=on_progress

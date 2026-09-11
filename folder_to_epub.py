@@ -197,6 +197,27 @@ def collect_chapters_and_images(source_dir: Path) -> List[ChapterData]:
     return chapters
 
 
+def find_root_cover(source_dir: Path) -> Optional[Path]:
+    """
+    Recherche à la racine du dossier source une image valide contenant 'cover' dans son nom (insensible à la casse).
+    Exemples : cover.jpg, Cover.png, 00_cover.webp, etc.
+    Retourne le chemin Path du premier fichier trouvé (trié naturellement), ou None.
+    """
+    if not source_dir or not source_dir.exists() or not source_dir.is_dir():
+        return None
+
+    candidates = []
+    for p in source_dir.iterdir():
+        if p.is_file() and not is_hidden_or_system_file(p) and p.suffix.lower() in SUPPORTED_EXTENSIONS:
+            stem_lower = p.stem.lower()
+            if 'cover' in stem_lower or 'couverture' in stem_lower:
+                candidates.append(p)
+
+    if candidates:
+        return natsorted(candidates, key=lambda p: p.name)[0]
+    return None
+
+
 def create_epub(
     chapters: List[ChapterData],
     output_file: Path,
@@ -204,6 +225,7 @@ def create_epub(
     author: str,
     language: str = "fr",
     custom_cover_path: Optional[Path] = None,
+    source_dir: Optional[Path] = None,
     is_manga: bool = False,
     is_rtl: bool = False,
     progress_callback=None
@@ -240,8 +262,20 @@ def create_epub(
     cover_page: Optional[ImagePage] = None
     if custom_cover_path and custom_cover_path.exists():
         cover_page = ImagePage(custom_cover_path, "Couverture", 0)
-    elif chapters and chapters[0].pages:
-        cover_page = chapters[0].pages[0]
+    else:
+        # Recherche par défaut : image à la racine du dossier contenant 'cover' dans le nom
+        root_cover = None
+        if source_dir:
+            root_cover = find_root_cover(source_dir)
+        elif chapters and chapters[0].folder_path:
+            # Recherche dans le dossier parent (si sous-dossiers) ou dans le dossier du chapitre
+            parent_dir = chapters[0].folder_path.parent
+            root_cover = find_root_cover(parent_dir) or find_root_cover(chapters[0].folder_path)
+
+        if root_cover and root_cover.exists():
+            cover_page = ImagePage(root_cover, "Couverture", 0)
+        elif chapters and chapters[0].pages:
+            cover_page = chapters[0].pages[0]
 
     if cover_page and cover_page.is_valid:
         with open(cover_page.file_path, 'rb') as f:
@@ -431,6 +465,17 @@ def main():
         console.print(table)
         console.print(f"[bold green]Total : {len(chapters)} chapitre(s), {total_images} page(s) image(s).[/bold green]\n")
 
+    # Détection automatique d'une couverture à la racine si non spécifiée
+    cover_to_use = args.cover
+    if not cover_to_use:
+        auto_cover = find_root_cover(source_path)
+        if auto_cover:
+            cover_to_use = auto_cover
+            if console:
+                console.print(f"[bold cyan]ℹ Couverture racine détectée :[/bold cyan] [yellow]{auto_cover.name}[/yellow]")
+            else:
+                print(f"ℹ Couverture racine détectée : {auto_cover.name}")
+
     # 2. Génération de l'EPUB
     if RICH_AVAILABLE and console:
         with Progress(
@@ -452,7 +497,8 @@ def main():
                 title=book_title,
                 author=args.author,
                 language=args.lang,
-                custom_cover_path=args.cover,
+                custom_cover_path=cover_to_use,
+                source_dir=source_path,
                 is_manga=args.manga,
                 is_rtl=args.rtl,
                 progress_callback=update_progress
@@ -465,7 +511,8 @@ def main():
             title=book_title,
             author=args.author,
             language=args.lang,
-            custom_cover_path=args.cover,
+            custom_cover_path=cover_to_use,
+            source_dir=source_path,
             is_manga=args.manga,
             is_rtl=args.rtl
         )
